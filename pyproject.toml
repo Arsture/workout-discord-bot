@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "workout-discord-bot"
+version = "0.1.0"
+description = "Discord bot for workout tracking and penalty calculation"
+authors = ["arsture"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+discord-py = "^2.5.2"
+python-dotenv = "^1.1.0"
+apscheduler = "^3.11.0"
+aiosqlite = "^0.21.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
