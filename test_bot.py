@@ -84,6 +84,36 @@ async def test_database():
     progress_bar = create_progress_bar(workout_count, goal)
     print(f"진행률 바: {progress_bar}")
 
+    # 6. 추가 운동 기록 테스트 (여러 날)
+    print("\n6️⃣ 여러 날 운동 기록 테스트")
+    from datetime import timedelta
+
+    # 어제 기록 추가
+    yesterday = today - timedelta(days=1)
+    success = await db.add_workout_record(
+        test_user_id, test_username, yesterday, week_start
+    )
+    print(f"어제 운동 기록: {'✅ 성공' if success else '❌ 실패'}")
+
+    # 내일 기록 추가 (미래 날짜)
+    tomorrow = today + timedelta(days=1)
+    success = await db.add_workout_record(
+        test_user_id, test_username, tomorrow, week_start
+    )
+    print(f"내일 운동 기록: {'✅ 성공' if success else '❌ 실패'}")
+
+    # 최종 운동 횟수 확인
+    final_count = await db.get_weekly_workout_count(test_user_id, week_start)
+    print(f"최종 운동 횟수: {final_count}회")
+
+    # 진행률 바 업데이트
+    final_progress_bar = create_progress_bar(final_count, goal)
+    print(f"최종 진행률 바: {final_progress_bar}")
+
+    # 최종 벌금 계산
+    final_penalty = calculate_penalty(goal, final_count)
+    print(f"최종 예상 벌금: {format_currency(final_penalty)}")
+
 
 def test_utils():
     """유틸리티 함수 테스트"""

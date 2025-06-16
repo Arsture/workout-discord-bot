@@ -9,8 +9,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from database import Database
-from utils import calculate_penalty, get_week_start_end, format_currency
-from config import MIN_WEEKLY_GOAL, MAX_WEEKLY_GOAL
+from utils import calculate_penalty, get_week_start_end, format_currency, get_today_date
+from config import (
+    MIN_WEEKLY_GOAL,
+    MAX_WEEKLY_GOAL,
+    WORKOUT_CHANNEL_NAME,
+    SUPPORTED_IMAGE_EXTENSIONS,
+)
 
 # 환경변수 로드
 load_dotenv()
@@ -256,18 +261,121 @@ async def on_message(message):
         return
 
     # workout-debugging 채널에서 사진 업로드 감지
-    if message.channel.name == "workout-debugging" and message.attachments:
-        for attachment in message.attachments:
-            if any(
-                attachment.filename.lower().endswith(ext)
-                for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]
-            ):
-                # TODO: 운동 기록 저장 로직 구현
-                await message.add_reaction("💪")
-                logger.info(f"{message.author.name}이 운동 사진을 업로드했습니다.")
-                break
+    if message.channel.name == WORKOUT_CHANNEL_NAME and message.attachments:
+        await handle_workout_photo(message)
 
     await bot.process_commands(message)
+
+
+async def handle_workout_photo(message):
+    """운동 사진 업로드 처리"""
+    user_id = message.author.id
+    username = message.author.display_name
+
+    # 사진 파일 확인
+    image_found = False
+    for attachment in message.attachments:
+        if any(
+            attachment.filename.lower().endswith(ext)
+            for ext in SUPPORTED_IMAGE_EXTENSIONS
+        ):
+            image_found = True
+            break
+
+    if not image_found:
+        return
+
+    # 사용자 설정 확인
+    user_settings = await bot.db.get_user_settings(user_id)
+    if not user_settings:
+        embed = discord.Embed(
+            title="⚠️ 목표 설정 필요",
+            description=f"{message.author.mention}님, 먼저 목표를 설정해주세요!",
+            color=0xFFFF00,
+        )
+        embed.add_field(
+            name="📝 설정 방법",
+            value="`/set-goals [횟수]` 명령어로 주간 운동 목표를 설정하세요.",
+            inline=False,
+        )
+        await message.reply(embed=embed)
+        return
+
+    # 오늘 날짜와 이번 주 시작 날짜
+    today = get_today_date()
+    week_start, _ = get_week_start_end()
+
+    # 운동 기록 추가 시도
+    success = await bot.db.add_workout_record(user_id, username, today, week_start)
+
+    if success:
+        # 현재 운동 횟수 조회
+        current_count = await bot.db.get_weekly_workout_count(user_id, week_start)
+        weekly_goal = user_settings["weekly_goal"]
+
+        # 성공 메시지 생성
+        embed = discord.Embed(
+            title="💪 운동 기록 완료!",
+            description=f"{username}님의 오늘 운동이 기록되었습니다!",
+            color=0x00FF00,
+        )
+
+        # 진행 상황 추가
+        progress_bar = create_progress_bar(current_count, weekly_goal)
+        embed.add_field(name="📈 이번 주 진행 상황", value=progress_bar, inline=False)
+
+        # 목표 달성 여부에 따른 메시지
+        if current_count >= weekly_goal:
+            embed.add_field(
+                name="🎉 축하합니다!",
+                value="이번 주 목표를 달성하셨습니다!",
+                inline=False,
+            )
+            embed.color = 0xFFD700  # 골드색
+        else:
+            remaining = weekly_goal - current_count
+            embed.add_field(
+                name="🎯 남은 목표", value=f"{remaining}회 더 화이팅!", inline=True
+            )
+
+            # 현재 예상 벌금
+            penalty = calculate_penalty(weekly_goal, current_count)
+            embed.add_field(
+                name="💰 현재 예상 벌금", value=format_currency(penalty), inline=True
+            )
+
+        embed.set_footer(text=f"오늘: {today.strftime('%m월 %d일')}")
+
+        # 반응 추가 및 메시지 전송
+        await message.add_reaction("💪")
+        await message.reply(embed=embed)
+
+        logger.info(f"운동 기록 성공: {username} - {current_count}/{weekly_goal}회")
+
+    else:
+        # 이미 기록된 경우
+        embed = discord.Embed(
+            title="⚠️ 이미 기록됨",
+            description=f"{username}님은 오늘 이미 운동을 기록하셨습니다.",
+            color=0xFFFF00,
+        )
+        embed.add_field(
+            name="📅 하루 1회 제한",
+            value="하루에 한 번만 운동을 기록할 수 있습니다.",
+            inline=False,
+        )
+
+        # 현재 진행 상황도 보여주기
+        current_count = await bot.db.get_weekly_workout_count(user_id, week_start)
+        weekly_goal = user_settings["weekly_goal"]
+        progress_bar = create_progress_bar(current_count, weekly_goal)
+
+        embed.add_field(name="📈 현재 진행 상황", value=progress_bar, inline=False)
+
+        await message.add_reaction("⚠️")
+        await message.reply(embed=embed)
+
+        logger.info(f"운동 기록 중복: {username} - 오늘 이미 기록됨")
 
 
 # 메인 실행
