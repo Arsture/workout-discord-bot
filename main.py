@@ -245,12 +245,99 @@ def create_progress_bar(current: int, total: int, length: int = 10) -> str:
 
 
 @bot.tree.command(name="revoke", description="잘못된 운동 기록을 취소합니다")
-async def revoke(interaction: discord.Interaction, member: discord.Member):
+async def revoke(
+    interaction: discord.Interaction, member: discord.Member, date: str = None
+):
     """운동 기록 취소 슬래시 커맨드"""
-    # TODO: 구현 예정
-    await interaction.response.send_message(
-        f"{member.mention}의 운동 기록 취소 기능 (구현 예정)", ephemeral=True
-    )
+    # 권한 확인 (본인이거나 관리자)
+    if (
+        interaction.user.id != member.id
+        and not interaction.user.guild_permissions.manage_messages
+    ):
+        await interaction.response.send_message(
+            "❌ 본인의 기록이거나 관리자 권한이 있어야 기록을 취소할 수 있습니다.",
+            ephemeral=True,
+        )
+        return
+
+    # 대상 사용자의 설정 확인
+    user_settings = await bot.db.get_user_settings(member.id)
+    if not user_settings:
+        await interaction.response.send_message(
+            f"❌ {member.display_name}님의 운동 기록이 없습니다.", ephemeral=True
+        )
+        return
+
+    # 날짜 파싱 (기본값: 오늘)
+    if date:
+        try:
+            from datetime import datetime
+
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ 날짜 형식이 올바르지 않습니다. (예: 2025-06-16)", ephemeral=True
+            )
+            return
+    else:
+        target_date = get_today_date()
+
+    # 운동 기록 취소 시도
+    success = await bot.db.revoke_workout_record(member.id, target_date)
+
+    if success:
+        # 현재 주차 정보 및 운동 횟수 업데이트
+        week_start, _ = get_week_start_end()
+        current_count = await bot.db.get_weekly_workout_count(member.id, week_start)
+        weekly_goal = user_settings["weekly_goal"]
+
+        embed = discord.Embed(
+            title="🔄 운동 기록 취소 완료",
+            description=f"{member.display_name}님의 {target_date.strftime('%m월 %d일')} 운동 기록이 취소되었습니다.",
+            color=0xFF9900,
+        )
+
+        # 현재 진행 상황
+        progress_bar = create_progress_bar(current_count, weekly_goal)
+        embed.add_field(name="📈 현재 진행 상황", value=progress_bar, inline=False)
+
+        # 업데이트된 벌금 정보
+        penalty = calculate_penalty(weekly_goal, current_count)
+        embed.add_field(
+            name="💰 현재 예상 벌금", value=format_currency(penalty), inline=True
+        )
+
+        if current_count < weekly_goal:
+            remaining = weekly_goal - current_count
+            embed.add_field(name="🎯 남은 목표", value=f"{remaining}회", inline=True)
+
+        embed.add_field(
+            name="👤 취소 요청자", value=interaction.user.mention, inline=True
+        )
+
+        embed.set_footer(text=f"취소된 날짜: {target_date.strftime('%Y년 %m월 %d일')}")
+
+        await interaction.response.send_message(embed=embed)
+        logger.info(
+            f"운동 기록 취소: {member.display_name} - {target_date.strftime('%Y-%m-%d')} (요청자: {interaction.user.display_name})"
+        )
+
+    else:
+        embed = discord.Embed(
+            title="⚠️ 취소할 기록 없음",
+            description=f"{member.display_name}님의 {target_date.strftime('%m월 %d일')} 운동 기록이 없거나 이미 취소되었습니다.",
+            color=0xFFFF00,
+        )
+        embed.add_field(
+            name="📅 확인 사항",
+            value="• 해당 날짜에 운동 기록이 있는지 확인해주세요\n• 이미 취소된 기록은 다시 취소할 수 없습니다",
+            inline=False,
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        logger.info(
+            f"운동 기록 취소 실패: {member.display_name} - {target_date.strftime('%Y-%m-%d')} (취소할 기록 없음)"
+        )
 
 
 @bot.event

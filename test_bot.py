@@ -114,6 +114,29 @@ async def test_database():
     final_penalty = calculate_penalty(goal, final_count)
     print(f"최종 예상 벌금: {format_currency(final_penalty)}")
 
+    # 7. 운동 기록 취소 테스트
+    print("\n7️⃣ 운동 기록 취소 테스트")
+
+    # 오늘 기록 취소
+    revoke_success = await db.revoke_workout_record(test_user_id, today)
+    print(f"오늘 기록 취소: {'✅ 성공' if revoke_success else '❌ 실패'}")
+
+    # 같은 기록 다시 취소 시도 (실패해야 함)
+    revoke_again = await db.revoke_workout_record(test_user_id, today)
+    print(f"중복 취소 시도: {'❌ 중복 허용됨' if revoke_again else '✅ 중복 방지됨'}")
+
+    # 취소 후 운동 횟수 확인
+    after_revoke_count = await db.get_weekly_workout_count(test_user_id, week_start)
+    print(f"취소 후 운동 횟수: {after_revoke_count}회")
+
+    # 취소 후 진행률 바
+    after_revoke_progress = create_progress_bar(after_revoke_count, goal)
+    print(f"취소 후 진행률 바: {after_revoke_progress}")
+
+    # 취소 후 벌금 계산
+    after_revoke_penalty = calculate_penalty(goal, after_revoke_count)
+    print(f"취소 후 예상 벌금: {format_currency(after_revoke_penalty)}")
+
 
 def test_utils():
     """유틸리티 함수 테스트"""
