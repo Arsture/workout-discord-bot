@@ -4,7 +4,7 @@
 
 ## 기능
 
-1. **운동 목표 설정** (`/set-goals [횟수]`) - 주간 운동 목표 설정 (4~7회)
+1. **운동 목표 설정** (`/set-goals [횟수]`) - **한 번 설정하면 매주 자동 적용** (4~7회)
 2. **현황 조회** (`/get-info`) - 이번 주 운동 현황 및 벌금 조회
 3. **자동 운동 기록** - 운동 채널에 사진 업로드 시 자동 인식 (하루 1회)
 4. **기록 취소** (`/revoke [@멤버] [날짜]`) - 잘못된 운동 기록 취소
@@ -19,6 +19,18 @@
 - 주간 벌금: 일일 벌금 × 부족한 운동 횟수
 
 예시: 목표 7회, 실제 3회 → 벌금 = (10,800 ÷ 7) × (7 - 3) = 6,171원
+
+## 사용법
+
+### 🎯 최초 설정 (한 번만 하면 됩니다!)
+1. `/set-goals 5` - 주간 운동 목표를 5회로 설정
+2. 이후 매주 자동으로 5회 목표가 적용됩니다
+3. 목표 변경 시에만 다시 `/set-goals [새로운 횟수]` 실행
+
+### 📊 일상 사용
+1. 운동 후 사진을 운동 채널에 업로드 (하루 1회)
+2. `/get-info`로 현재 진행 상황 확인
+3. 매주 자동으로 벌금 리포트 전송
 
 ## 설정 방법
 
@@ -46,6 +58,9 @@ REPORT_TIMEZONE=Asia/Seoul
 
 # 리포트 전송 채널 (기본값: WORKOUT_CHANNEL_NAME과 동일)
 REPORT_CHANNEL_NAME=workout-debugging
+
+# 관리자 역할 설정
+ADMIN_ROLE_NAME=Admin
 ```
 
 #### 설정 설명:
@@ -54,6 +69,7 @@ REPORT_CHANNEL_NAME=workout-debugging
 - `REPORT_DAY_OF_WEEK`: 주간 리포트 전송 요일 (0=월요일)
 - `REPORT_HOUR/MINUTE`: 주간 리포트 전송 시간
 - `REPORT_TIMEZONE`: 시간대 설정
+- `ADMIN_ROLE_NAME`: 리포트 전송 권한을 가진 역할명
 
 ### 3. Discord 봇 생성
 1. [Discord Developer Portal](https://discord.com/developers/applications)에서 새 애플리케이션 생성

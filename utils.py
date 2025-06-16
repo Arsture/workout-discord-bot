@@ -3,7 +3,7 @@ from typing import Tuple
 
 
 def calculate_penalty(
-    goal_count: int, actual_count: int, base_penalty: float = 10800.0
+    goal_count: int, actual_count: int, base_penalty: float = 10080.0
 ) -> float:
     """
     벌금 계산 함수

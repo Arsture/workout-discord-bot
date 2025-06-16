@@ -10,7 +10,7 @@ GUILD_ID = os.getenv("GUILD_ID")
 WORKOUT_CHANNEL_NAME = os.getenv("WORKOUT_CHANNEL_NAME", "workout-debugging")
 
 # 벌금 설정
-BASE_PENALTY = 10800.0  # 기본 벌금 10,800원
+BASE_PENALTY = 10080.0  # 기본 벌금 10,080원
 
 # 운동 목표 범위
 MIN_WEEKLY_GOAL = 4
@@ -32,3 +32,6 @@ REPORT_TIMEZONE = os.getenv("REPORT_TIMEZONE", "Asia/Seoul")  # 시간대
 
 # 리포트 전송 채널 설정 (기본값: WORKOUT_CHANNEL_NAME과 동일)
 REPORT_CHANNEL_NAME = os.getenv("REPORT_CHANNEL_NAME", WORKOUT_CHANNEL_NAME)
+
+# 관리자 역할 설정
+ADMIN_ROLE_NAME = os.getenv("ADMIN_ROLE_NAME", "Admin")

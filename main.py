@@ -21,6 +21,7 @@ from config import (
     REPORT_MINUTE,
     REPORT_TIMEZONE,
     REPORT_CHANNEL_NAME,
+    ADMIN_ROLE_NAME,
 )
 
 # 환경변수 로드
@@ -276,20 +277,30 @@ async def set_goals(interaction: discord.Interaction, count: int):
 
         embed = discord.Embed(
             title="🎯 운동 목표 설정 완료!",
-            description=f"주간 운동 목표가 **{count}회**로 설정되었습니다.",
+            description=f"앞으로 매주 **{count}회** 운동하는 것이 목표로 설정되었습니다.",
             color=0x00FF00,
         )
         embed.add_field(
-            name="📅 적용 기간",
-            value=f"이번 주 ({week_start_str} ~ {week_end_str})",
+            name="📅 적용 범위",
+            value="**매주 자동 적용** (목표 변경 전까지 계속 유지됩니다)",
             inline=False,
         )
         embed.add_field(
+            name="📊 이번 주",
+            value=f"{week_start_str} ~ {week_end_str}",
+            inline=True,
+        )
+        embed.add_field(
             name="💰 벌금 정보",
-            value=f"목표 미달성 시 하루당 **{10800//count:,}원**의 벌금이 부과됩니다.",
+            value=f"목표 미달성 시 하루당 **{10080//count:,}원**의 벌금이 부과됩니다.",
             inline=False,
         )
-        embed.set_footer(text="💪 화이팅! 목표를 달성해보세요!")
+        embed.add_field(
+            name="🔄 목표 변경",
+            value="언제든지 `/set-goals [새로운 횟수]`로 목표를 변경할 수 있습니다.",
+            inline=False,
+        )
+        embed.set_footer(text="💪 한번 설정하면 매주 자동 적용! 화이팅!")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
         logger.info(f"목표 설정 완료: {interaction.user.display_name} - {count}회")
@@ -357,7 +368,7 @@ async def get_info(interaction: discord.Interaction):
     # 임베드 생성
     embed = discord.Embed(
         title=f"{status_emoji} {interaction.user.display_name}님의 운동 현황",
-        description=f"**{status_text}**",
+        description=f"**{status_text}** (주간 목표: {weekly_goal}회)",
         color=color,
     )
 
@@ -630,12 +641,17 @@ async def weekly_report(interaction: discord.Interaction, week_offset: int = 0):
 )
 async def test_report(interaction: discord.Interaction):
     """주간 리포트 테스트 슬래시 커맨드 (채널에 공개 전송)"""
-    # 관리자 권한 확인
-    if not interaction.user.guild_permissions.manage_messages:
-        await interaction.response.send_message(
-            "❌ 관리자 권한이 있어야 이 명령어를 사용할 수 있습니다.", ephemeral=True
-        )
-        return
+    # # Admin 역할 확인
+    # has_admin_role = any(
+    #     role.name == ADMIN_ROLE_NAME for role in interaction.user.roles
+    # )
+    # print(interaction.user)
+    # if not has_admin_role:
+    #     await interaction.response.send_message(
+    #         f"❌ '{ADMIN_ROLE_NAME}' 역할이 있어야 이 명령어를 사용할 수 있습니다.",
+    #         ephemeral=True,
+    #     )
+    #     return
 
     await interaction.response.send_message(
         "📊 주간 리포트를 채널에 전송 중입니다...", ephemeral=True
