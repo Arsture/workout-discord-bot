@@ -271,9 +271,9 @@ async def set_goals(interaction: discord.Interaction, count: int):
     week_start, week_end = get_week_start_end()
     
     # 수정 가능기한 확인
-    if week_start < datetime.now() - timedelta(days = MODIFY_DEADLINE):
+    if week_start + timedelta(days = MODIFY_DEADLINE) < datetime.now():
         await interaction.response.send_message(
-            f"⚠️ 목표 수정은 {KOREAN_WEEKDAY_NAMES[MODIFY_DEADLINE]}까지만 가능합니다.",
+            f"⚠️ 목표 수정은 {KOREAN_WEEKDAY_NAMES[MODIFY_DEADLINE - 1]}까지만 가능합니다.",
             ephemeral=True,
         )
         return

@@ -17,7 +17,7 @@ MIN_WEEKLY_GOAL = 4
 MAX_WEEKLY_GOAL = 7
 
 # 목표 수정 가능 기간
-MODIFY_DEADLINE = 1  # 월요일 00:00:00 + N일
+MODIFY_DEADLINE = 2  # 월요일 00:00:00 + N일, 0이면 목표 초기 설정 및 수정 불가능
 
 # 한국 요일 이름
 KOREAN_WEEKDAY_NAMES = [
