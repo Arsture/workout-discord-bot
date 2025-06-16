@@ -16,6 +16,20 @@ BASE_PENALTY = 10080.0  # 기본 벌금 10,080원
 MIN_WEEKLY_GOAL = 4
 MAX_WEEKLY_GOAL = 7
 
+# 목표 수정 가능 기간
+MODIFY_DEADLINE = 1  # 월요일 00:00:00 + N일
+
+# 한국 요일 이름
+KOREAN_WEEKDAY_NAMES = [
+    "월요일",
+    "화요일",
+    "수요일",
+    "목요일",
+    "금요일",
+    "토요일",
+    "일요일",
+]
+
 # 데이터베이스 설정
 DATABASE_PATH = "workout_bot.db"
 
