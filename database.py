@@ -298,3 +298,24 @@ class Database:
         except Exception as e:
             logger.error(f"전체 누적 벌금 합계 조회 실패: {e}")
             return 0.0
+
+    async def reset_database(self) -> bool:
+        """데이터베이스의 모든 데이터를 삭제하고 테이블을 재생성"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # 모든 테이블 삭제
+                await db.execute("DROP TABLE IF EXISTS weekly_penalties")
+                await db.execute("DROP TABLE IF EXISTS workout_records")
+                await db.execute("DROP TABLE IF EXISTS user_settings")
+
+                await db.commit()
+                logger.info("모든 테이블 삭제 완료")
+
+            # 테이블 재생성
+            await self.init_db()
+
+            logger.info("데이터베이스가 성공적으로 초기화되었습니다.")
+            return True
+        except Exception as e:
+            logger.error(f"데이터베이스 초기화 실패: {e}")
+            return False

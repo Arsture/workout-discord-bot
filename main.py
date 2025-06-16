@@ -641,17 +641,16 @@ async def weekly_report(interaction: discord.Interaction, week_offset: int = 0):
 )
 async def test_report(interaction: discord.Interaction):
     """주간 리포트 테스트 슬래시 커맨드 (채널에 공개 전송)"""
-    # # Admin 역할 확인
-    # has_admin_role = any(
-    #     role.name == ADMIN_ROLE_NAME for role in interaction.user.roles
-    # )
-    # print(interaction.user)
-    # if not has_admin_role:
-    #     await interaction.response.send_message(
-    #         f"❌ '{ADMIN_ROLE_NAME}' 역할이 있어야 이 명령어를 사용할 수 있습니다.",
-    #         ephemeral=True,
-    #     )
-    #     return
+    # Admin 역할 확인
+    has_admin_role = any(
+        role.name == ADMIN_ROLE_NAME for role in interaction.user.roles
+    )
+    if not has_admin_role:
+        await interaction.response.send_message(
+            f"❌ '{ADMIN_ROLE_NAME}' 역할이 있어야 이 명령어를 사용할 수 있습니다.",
+            ephemeral=True,
+        )
+        return
 
     await interaction.response.send_message(
         "📊 주간 리포트를 채널에 전송 중입니다...", ephemeral=True
@@ -677,6 +676,65 @@ async def test_report(interaction: discord.Interaction):
         )
         await interaction.followup.send(embed=error_embed, ephemeral=True)
         logger.error(f"주간 리포트 테스트 실패: {e}")
+
+
+@bot.tree.command(
+    name="reset-db", description="데이터베이스를 초기화합니다 (관리자 전용)"
+)
+@discord.app_commands.describe(
+    confirmation="데이터베이스를 초기화하려면 '초기화'를 입력하세요."
+)
+async def reset_db(interaction: discord.Interaction, confirmation: str):
+    """데이터베이스 초기화 슬래시 커맨드"""
+    # Admin 역할 확인
+    has_admin_role = any(
+        role.name == ADMIN_ROLE_NAME for role in interaction.user.roles
+    )
+    if not has_admin_role:
+        await interaction.response.send_message(
+            f"❌ '{ADMIN_ROLE_NAME}' 역할이 있어야 이 명령어를 사용할 수 있습니다.",
+            ephemeral=True,
+        )
+        return
+
+    # 확인 절차
+    if confirmation != "초기화":
+        await interaction.response.send_message(
+            "❌ 초기화가 취소되었습니다. 확인 문구를 정확히 입력해주세요. (예: `초기화`)",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.send_message(
+        "⏳ 데이터베이스를 초기화하는 중입니다...", ephemeral=True
+    )
+
+    try:
+        # 데이터베이스 리셋 실행
+        success = await bot.db.reset_database()
+
+        if success:
+            embed = discord.Embed(
+                title="✅ 데이터베이스 초기화 완료",
+                description="모든 사용자 데이터, 운동 기록, 벌금이 삭제되고 시스템이 초기 상태로 돌아갔습니다.",
+                color=0x00FF00,
+            )
+            embed.set_footer(text=f"요청자: {interaction.user.display_name}")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.warning(
+                f"데이터베이스 초기화 완료 by {interaction.user.display_name}"
+            )
+        else:
+            raise Exception("DB 리셋 메서드에서 False를 반환했습니다.")
+
+    except Exception as e:
+        error_embed = discord.Embed(
+            title="❌ 데이터베이스 초기화 실패",
+            description=f"초기화 중 오류가 발생했습니다: {str(e)}",
+            color=0xFF0000,
+        )
+        await interaction.followup.send(embed=error_embed, ephemeral=True)
+        logger.error(f"데이터베이스 초기화 실패: {e}")
 
 
 @bot.event
