@@ -231,25 +231,6 @@ class Database:
             logger.error(f"전체 사용자 주간 데이터 조회 실패: {e}")
             return []
 
-    async def update_total_penalty(self, user_id: int, penalty_amount: float) -> bool:
-        """사용자의 누적 벌금 업데이트"""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    """
-                    UPDATE user_settings 
-                    SET total_penalty = total_penalty + ?, updated_at = ?
-                    WHERE user_id = ?
-                """,
-                    (penalty_amount, datetime.now(), user_id),
-                )
-                await db.commit()
-                logger.info(f"사용자 {user_id} 누적 벌금 업데이트: +{penalty_amount}원")
-                return True
-        except Exception as e:
-            logger.error(f"누적 벌금 업데이트 실패: {e}")
-            return False
-
     async def add_weekly_penalty_record(
         self,
         user_id: int,
@@ -259,14 +240,15 @@ class Database:
         actual_count: int,
         penalty_amount: float,
     ) -> bool:
-        """주간 벌금 기록 추가"""
+        """주간 벌금 기록 추가 및 누적 벌금 업데이트 (트랜잭션)"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
+                # 1. 주간 벌금 기록 (이미 있으면 무시)
                 await db.execute(
                     """
-                    INSERT OR REPLACE INTO weekly_penalties 
-                    (user_id, username, week_start_date, goal_count, actual_count, penalty_amount)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT OR IGNORE INTO weekly_penalties
+                    (user_id, username, week_start_date, goal_count, actual_count, penalty_amount, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         user_id,
@@ -275,11 +257,44 @@ class Database:
                         goal_count,
                         actual_count,
                         penalty_amount,
+                        datetime.now(),
                     ),
                 )
-                await db.commit()
-                logger.info(f"주간 벌금 기록 추가: {username} - {penalty_amount}원")
-                return True
+
+                # 2. 실제로 새로운 기록이 추가되었는지 확인
+                if db.total_changes > 0:
+                    # 3. 누적 벌금 업데이트
+                    await db.execute(
+                        """
+                        UPDATE user_settings
+                        SET total_penalty = total_penalty + ?, updated_at = ?
+                        WHERE user_id = ?
+                    """,
+                        (penalty_amount, datetime.now(), user_id),
+                    )
+                    await db.commit()
+                    logger.info(
+                        f"주간 벌금 기록 및 누적 벌금 업데이트 완료: {username} (+{penalty_amount}원)"
+                    )
+                    return True
+                else:
+                    logger.info(
+                        f"이미 처리된 주간 벌금: {username} - {week_start_date.date()}"
+                    )
+                    return False
         except Exception as e:
-            logger.error(f"주간 벌금 기록 추가 실패: {e}")
+            logger.error(f"주간 벌금 처리 실패: {e}")
             return False
+
+    async def get_total_accumulated_penalty(self) -> float:
+        """모든 사용자의 전체 누적 벌금 합계 조회"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    "SELECT SUM(total_penalty) FROM user_settings"
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    return row[0] if row and row[0] is not None else 0.0
+        except Exception as e:
+            logger.error(f"전체 누적 벌금 합계 조회 실패: {e}")
+            return 0.0

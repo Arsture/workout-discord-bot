@@ -101,7 +101,6 @@ class WorkoutBot(commands.Bot):
             # 벌금 계산 및 데이터 정리
             report_data = []
             total_weekly_penalty = 0
-            total_accumulated_penalty = 0
 
             for user_data in users_data:
                 user_id = user_data["user_id"]
@@ -113,9 +112,9 @@ class WorkoutBot(commands.Bot):
                 # 이번 주 벌금 계산
                 weekly_penalty = calculate_penalty(weekly_goal, workout_count)
 
-                # 벌금 기록 저장
+                # 벌금 기록 저장 및 누적 벌금 업데이트 (원자적 처리)
                 if weekly_penalty > 0:
-                    await self.db.add_weekly_penalty_record(
+                    was_penalty_added = await self.db.add_weekly_penalty_record(
                         user_id,
                         username,
                         last_week_start,
@@ -123,10 +122,9 @@ class WorkoutBot(commands.Bot):
                         workout_count,
                         weekly_penalty,
                     )
-
-                    # 누적 벌금 업데이트
-                    await self.db.update_total_penalty(user_id, weekly_penalty)
-                    current_total_penalty += weekly_penalty
+                    # 벌금이 새로 추가된 경우에만 현재 누적 벌금에 반영
+                    if was_penalty_added:
+                        current_total_penalty += weekly_penalty
 
                 # 리포트 데이터 추가
                 report_data.append(
@@ -140,7 +138,9 @@ class WorkoutBot(commands.Bot):
                 )
 
                 total_weekly_penalty += weekly_penalty
-                total_accumulated_penalty += current_total_penalty
+
+            # 전체 누적 벌금은 DB에서 직접 조회하여 정확성 보장
+            total_accumulated_penalty = await self.db.get_total_accumulated_penalty()
 
             # 리포트 전송
             await self.send_report_to_channel(
