@@ -8,6 +8,8 @@ from discord.ext import commands, tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
+from flask import Flask
+from threading import Thread
 
 from database import Database
 from utils import calculate_penalty, get_week_start_end, format_currency, get_today_date
@@ -862,8 +864,31 @@ async def handle_workout_photo(message):
         logger.info(f"운동 기록 중복: {username} - 오늘 이미 기록됨")
 
 
+# Flask 웹 서버 설정 (Replit 24/7 유지용)
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+    return "Bot is alive!"
+
+
+def run_web_server():
+    # Replit은 0.0.0.0 주소를 사용해야 외부에서 접근 가능
+    app.run(host="0.0.0.0", port=8080)
+
+
+def start_web_server_in_thread():
+    web_thread = Thread(target=run_web_server)
+    web_thread.daemon = True
+    web_thread.start()
+
+
 # 메인 실행
 async def main():
+    # 웹 서버를 별도 스레드에서 실행
+    start_web_server_in_thread()
+
     async with bot:
         await bot.start(os.getenv("DISCORD_TOKEN"))
 
