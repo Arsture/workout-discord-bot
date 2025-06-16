@@ -67,6 +67,23 @@ async def test_database():
     workout_count = await db.get_weekly_workout_count(test_user_id, week_start)
     print(f"이번 주 운동 횟수: {workout_count}회")
 
+    # 5. 현황 정보 시뮬레이션 테스트
+    print("\n5️⃣ 현황 정보 시뮬레이션 테스트")
+    goal = user_settings["weekly_goal"]
+    penalty = calculate_penalty(goal, workout_count)
+    progress = (workout_count / goal) * 100
+
+    print(f"목표: {goal}회")
+    print(f"현재: {workout_count}회")
+    print(f"진행률: {progress:.1f}%")
+    print(f"예상 벌금: {format_currency(penalty)}")
+
+    # 진행률 바 테스트
+    from main import create_progress_bar
+
+    progress_bar = create_progress_bar(workout_count, goal)
+    print(f"진행률 바: {progress_bar}")
+
 
 def test_utils():
     """유틸리티 함수 테스트"""

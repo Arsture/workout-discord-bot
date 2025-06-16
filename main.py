@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from database import Database
-from utils import calculate_penalty, get_week_start_end
+from utils import calculate_penalty, get_week_start_end, format_currency
 from config import MIN_WEEKLY_GOAL, MAX_WEEKLY_GOAL
 
 # 환경변수 로드
@@ -125,10 +125,118 @@ async def set_goals(interaction: discord.Interaction, count: int):
 @bot.tree.command(name="get-info", description="이번 주 운동 현황과 벌금을 조회합니다")
 async def get_info(interaction: discord.Interaction):
     """운동 현황 조회 슬래시 커맨드"""
-    # TODO: 구현 예정
-    await interaction.response.send_message(
-        "현황 조회 기능 (구현 예정)", ephemeral=True
+    # 사용자 설정 조회
+    user_settings = await bot.db.get_user_settings(interaction.user.id)
+
+    if not user_settings:
+        embed = discord.Embed(
+            title="⚠️ 목표 설정 필요",
+            description="먼저 `/set-goals` 명령어로 주간 운동 목표를 설정해주세요!",
+            color=0xFFFF00,
+        )
+        embed.add_field(
+            name="📝 목표 설정 방법",
+            value="`/set-goals [횟수]` - 4~7회 사이에서 설정 가능",
+            inline=False,
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # 현재 주차 정보
+    week_start, week_end = get_week_start_end()
+    current_workout_count = await bot.db.get_weekly_workout_count(
+        interaction.user.id, week_start
     )
+
+    # 벌금 계산
+    weekly_goal = user_settings["weekly_goal"]
+    penalty_amount = calculate_penalty(weekly_goal, current_workout_count)
+    total_penalty = user_settings["total_penalty"]
+
+    # 진행률 계산
+    progress_percentage = min((current_workout_count / weekly_goal) * 100, 100)
+    progress_bar = create_progress_bar(current_workout_count, weekly_goal)
+
+    # 상태에 따른 색상 결정
+    if current_workout_count >= weekly_goal:
+        color = 0x00FF00  # 초록색 (목표 달성)
+        status_emoji = "🎉"
+        status_text = "목표 달성!"
+    elif penalty_amount == 0:
+        color = 0x00FF00  # 초록색
+        status_emoji = "✅"
+        status_text = "벌금 없음"
+    elif penalty_amount <= 3000:
+        color = 0xFFFF00  # 노란색 (약간 위험)
+        status_emoji = "⚠️"
+        status_text = "조금 부족해요"
+    else:
+        color = 0xFF0000  # 빨간색 (위험)
+        status_emoji = "🚨"
+        status_text = "더 노력하세요!"
+
+    # 임베드 생성
+    embed = discord.Embed(
+        title=f"{status_emoji} {interaction.user.display_name}님의 운동 현황",
+        description=f"**{status_text}**",
+        color=color,
+    )
+
+    # 기본 정보
+    embed.add_field(name="🎯 이번 주 목표", value=f"{weekly_goal}회", inline=True)
+    embed.add_field(
+        name="💪 현재 운동 횟수", value=f"{current_workout_count}회", inline=True
+    )
+    embed.add_field(name="📊 달성률", value=f"{progress_percentage:.1f}%", inline=True)
+
+    # 진행률 바
+    embed.add_field(name="📈 진행 상황", value=progress_bar, inline=False)
+
+    # 벌금 정보
+    if penalty_amount > 0:
+        embed.add_field(
+            name="💸 이번 주 예상 벌금",
+            value=f"**{format_currency(penalty_amount)}**",
+            inline=True,
+        )
+
+        remaining_days = 7 - (datetime.now().weekday() + 1)
+        if remaining_days > 0:
+            embed.add_field(
+                name="⏰ 남은 기회",
+                value=f"{weekly_goal - current_workout_count}회 ({remaining_days}일 남음)",
+                inline=True,
+            )
+    else:
+        embed.add_field(name="💸 이번 주 예상 벌금", value="**0원** 🎉", inline=True)
+
+    embed.add_field(
+        name="💰 누적 벌금", value=format_currency(total_penalty), inline=True
+    )
+
+    # 주차 정보
+    week_start_str = week_start.strftime("%m월 %d일")
+    week_end_str = week_end.strftime("%m월 %d일")
+    embed.set_footer(text=f"기간: {week_start_str} ~ {week_end_str} | 💪 화이팅!")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    logger.info(
+        f"현황 조회: {interaction.user.display_name} - {current_workout_count}/{weekly_goal}회"
+    )
+
+
+def create_progress_bar(current: int, total: int, length: int = 10) -> str:
+    """진행률 바 생성"""
+    if total == 0:
+        return "📊 " + "▱" * length
+
+    filled = min(int((current / total) * length), length)
+    empty = length - filled
+
+    progress = "📊 " + "▰" * filled + "▱" * empty
+    progress += f" {current}/{total}"
+
+    return progress
 
 
 @bot.tree.command(name="revoke", description="잘못된 운동 기록을 취소합니다")
