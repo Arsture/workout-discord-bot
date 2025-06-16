@@ -420,12 +420,12 @@ async def get_info(interaction: discord.Interaction):
 def create_progress_bar(current: int, total: int, length: int = 10) -> str:
     """진행률 바 생성"""
     if total == 0:
-        return "📊 " + "▱" * length
+        return "📊 " + "⬜︎" * length
 
     filled = min(int((current / total) * length), length)
     empty = length - filled
 
-    progress = "📊 " + "▰" * filled + "▱" * empty
+    progress = "📊 " + "⬛︎" * filled + "⬜︎" * empty
     progress += f" {current}/{total}"
 
     return progress
