@@ -21,3 +21,14 @@ DATABASE_PATH = "workout_bot.db"
 
 # 지원하는 이미지 확장자
 SUPPORTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
+
+# 주간 리포트 스케줄 설정
+REPORT_DAY_OF_WEEK = int(
+    os.getenv("REPORT_DAY_OF_WEEK", "0")
+)  # 0=월요일, 1=화요일, ..., 6=일요일
+REPORT_HOUR = int(os.getenv("REPORT_HOUR", "0"))  # 시간 (0-23)
+REPORT_MINUTE = int(os.getenv("REPORT_MINUTE", "0"))  # 분 (0-59)
+REPORT_TIMEZONE = os.getenv("REPORT_TIMEZONE", "Asia/Seoul")  # 시간대
+
+# 리포트 전송 채널 설정 (기본값: WORKOUT_CHANNEL_NAME과 동일)
+REPORT_CHANNEL_NAME = os.getenv("REPORT_CHANNEL_NAME", WORKOUT_CHANNEL_NAME)
