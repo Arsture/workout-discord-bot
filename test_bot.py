@@ -137,6 +137,41 @@ async def test_database():
     after_revoke_penalty = calculate_penalty(goal, after_revoke_count)
     print(f"취소 후 예상 벌금: {format_currency(after_revoke_penalty)}")
 
+    # 8. 주간 리포트 데이터 테스트
+    print("\n8️⃣ 주간 리포트 데이터 테스트")
+
+    # 지난 주 데이터 시뮬레이션
+    all_users_data = await db.get_all_users_weekly_data(week_start)
+    print(f"주간 데이터 조회 결과: {len(all_users_data)}명")
+
+    for user_data in all_users_data:
+        weekly_penalty = calculate_penalty(
+            user_data["weekly_goal"], user_data["workout_count"]
+        )
+        print(
+            f"- {user_data['username']}: {user_data['workout_count']}/{user_data['weekly_goal']}회 → 벌금 {format_currency(weekly_penalty)}"
+        )
+
+        # 주간 벌금 기록 추가
+        if weekly_penalty > 0:
+            await db.add_weekly_penalty_record(
+                user_data["user_id"],
+                user_data["username"],
+                week_start,
+                user_data["weekly_goal"],
+                user_data["workout_count"],
+                weekly_penalty,
+            )
+            print(f"  ✅ 주간 벌금 기록 저장됨")
+
+    # 총 벌금 계산
+    total_weekly = sum(
+        calculate_penalty(u["weekly_goal"], u["workout_count"]) for u in all_users_data
+    )
+    total_accumulated = sum(u["total_penalty"] for u in all_users_data) + total_weekly
+    print(f"총 주간 벌금: {format_currency(total_weekly)}")
+    print(f"총 누적 벌금: {format_currency(total_accumulated)}")
+
 
 def test_utils():
     """유틸리티 함수 테스트"""

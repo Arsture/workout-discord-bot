@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands, tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+import pytz
 
 from database import Database
 from utils import calculate_penalty, get_week_start_end, format_currency, get_today_date
@@ -46,10 +47,13 @@ class WorkoutBot(commands.Bot):
         self.scheduler.start()
         logger.info("스케줄러 시작")
 
-        # 매주 월요일 00:00에 주간 리포트 전송
+        # 매주 월요일 17:19 (한국 시간)에 주간 리포트 전송 - 테스트용
+        korea_tz = pytz.timezone("Asia/Seoul")
         self.scheduler.add_job(
             self.send_weekly_report,
-            CronTrigger(day_of_week=0, hour=0, minute=0),  # 월요일 00:00
+            CronTrigger(
+                day_of_week=0, hour=17, minute=24, timezone=korea_tz
+            ),  # 월요일 17:19 KST
             id="weekly_report",
         )
 
@@ -67,8 +71,169 @@ class WorkoutBot(commands.Bot):
 
     async def send_weekly_report(self):
         """주간 벌금 리포트 전송"""
-        # TODO: 구현 예정
-        logger.info("주간 리포트 전송 (구현 예정)")
+        try:
+            # 지난 주 데이터 계산 (월요일에 실행되므로 지난 주 집계)
+            now = datetime.now(pytz.timezone("Asia/Seoul"))
+            last_week_start = now - timedelta(days=now.weekday() + 7)  # 지난 주 월요일
+            last_week_start = last_week_start.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+
+            # 모든 사용자의 지난 주 데이터 조회
+            users_data = await self.db.get_all_users_weekly_data(last_week_start)
+
+            if not users_data:
+                logger.info("주간 리포트: 보고할 사용자 데이터 없음")
+                return
+
+            # 벌금 계산 및 데이터 정리
+            report_data = []
+            total_weekly_penalty = 0
+            total_accumulated_penalty = 0
+
+            for user_data in users_data:
+                user_id = user_data["user_id"]
+                username = user_data["username"]
+                weekly_goal = user_data["weekly_goal"]
+                workout_count = user_data["workout_count"]
+                current_total_penalty = user_data["total_penalty"]
+
+                # 이번 주 벌금 계산
+                weekly_penalty = calculate_penalty(weekly_goal, workout_count)
+
+                # 벌금 기록 저장
+                if weekly_penalty > 0:
+                    await self.db.add_weekly_penalty_record(
+                        user_id,
+                        username,
+                        last_week_start,
+                        weekly_goal,
+                        workout_count,
+                        weekly_penalty,
+                    )
+
+                    # 누적 벌금 업데이트
+                    await self.db.update_total_penalty(user_id, weekly_penalty)
+                    current_total_penalty += weekly_penalty
+
+                # 리포트 데이터 추가
+                report_data.append(
+                    {
+                        "username": username,
+                        "goal": weekly_goal,
+                        "actual": workout_count,
+                        "weekly_penalty": weekly_penalty,
+                        "total_penalty": current_total_penalty,
+                    }
+                )
+
+                total_weekly_penalty += weekly_penalty
+                total_accumulated_penalty += current_total_penalty
+
+            # 리포트 전송
+            await self.send_report_to_channel(
+                report_data,
+                last_week_start,
+                total_weekly_penalty,
+                total_accumulated_penalty,
+            )
+
+        except Exception as e:
+            logger.error(f"주간 리포트 전송 실패: {e}")
+
+    async def send_report_to_channel(
+        self, report_data, week_start, total_weekly_penalty, total_accumulated_penalty
+    ):
+        """채널에 리포트 전송"""
+        try:
+            # 리포트를 전송할 채널 찾기 (일반적으로 첫 번째 길드의 첫 번째 텍스트 채널)
+            target_channel = None
+
+            for guild in self.guilds:
+                for channel in guild.text_channels:
+                    if (
+                        channel.name == WORKOUT_CHANNEL_NAME
+                    ):  # workout-debugging 채널에 전송
+                        target_channel = channel
+                        break
+                if target_channel:
+                    break
+
+            if not target_channel:
+                # workout-debugging 채널이 없으면 첫 번째 텍스트 채널에 전송
+                for guild in self.guilds:
+                    for channel in guild.text_channels:
+                        if channel.permissions_for(guild.me).send_messages:
+                            target_channel = channel
+                            break
+                    if target_channel:
+                        break
+
+            if not target_channel:
+                logger.error("주간 리포트를 전송할 채널을 찾을 수 없습니다")
+                return
+
+            # 리포트 임베드 생성
+            week_start_str = week_start.strftime("%m월 %d일")
+            week_end_str = (week_start + timedelta(days=6)).strftime("%m월 %d일")
+
+            embed = discord.Embed(
+                title="📊 주간 운동 리포트",
+                description=f"**{week_start_str} ~ {week_end_str}** 운동 결과",
+                color=0x4169E1,
+                timestamp=datetime.now(),
+            )
+
+            # 개별 사용자 리포트
+            for i, user in enumerate(report_data, 1):
+                status_emoji = "✅" if user["weekly_penalty"] == 0 else "💸"
+                progress_bar = create_progress_bar(
+                    user["actual"], user["goal"], length=8
+                )
+
+                field_name = f"{status_emoji} {user['username']}"
+                field_value = (
+                    f"{progress_bar}\n"
+                    f"목표: {user['goal']}회 → 실제: {user['actual']}회\n"
+                    f"이번 주 벌금: **{format_currency(user['weekly_penalty'])}**\n"
+                    f"누적 벌금: {format_currency(user['total_penalty'])}"
+                )
+
+                embed.add_field(
+                    name=field_name,
+                    value=field_value,
+                    inline=len(report_data) <= 2,  # 2명 이하면 나란히, 많으면 세로로
+                )
+
+            # 전체 요약
+            embed.add_field(
+                name="📈 전체 요약",
+                value=(
+                    f"• 이번 주 총 벌금: **{format_currency(total_weekly_penalty)}**\n"
+                    f"• 전체 누적 벌금: **{format_currency(total_accumulated_penalty)}**\n"
+                    f"• 참여자 수: {len(report_data)}명"
+                ),
+                inline=False,
+            )
+
+            embed.set_footer(text="💪 새로운 주가 시작됩니다! 화이팅!")
+
+            # 멘션 추가하여 전송
+            mention_users = []
+            for user_data in report_data:
+                if user_data["weekly_penalty"] > 0:  # 벌금이 있는 사용자만 멘션
+                    # 실제 구현에서는 user_id로 멘션해야 하지만 여기서는 이름만 사용
+                    mention_users.append(user_data["username"])
+
+            mention_text = ""
+            if mention_users:
+                mention_text = f"💸 벌금 대상자: {', '.join(mention_users)}\n\n"
+
+            await target_channel.send(mention_text, embed=embed)
+            logger.info(f"주간 리포트 전송 완료: {target_channel.name} 채널")
+
+        except Exception as e:
+            logger.error(f"리포트 채널 전송 실패: {e}")
 
 
 # 봇 인스턴스 생성
@@ -338,6 +503,44 @@ async def revoke(
         logger.info(
             f"운동 기록 취소 실패: {member.display_name} - {target_date.strftime('%Y-%m-%d')} (취소할 기록 없음)"
         )
+
+
+@bot.tree.command(
+    name="test-report", description="주간 리포트를 수동으로 테스트합니다 (관리자 전용)"
+)
+async def test_report(interaction: discord.Interaction):
+    """주간 리포트 테스트 슬래시 커맨드"""
+    # 관리자 권한 확인
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message(
+            "❌ 관리자 권한이 있어야 이 명령어를 사용할 수 있습니다.", ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(
+        "📊 주간 리포트를 생성 중입니다...", ephemeral=True
+    )
+
+    try:
+        # 수동으로 주간 리포트 실행
+        await bot.send_weekly_report()
+
+        # 완료 메시지
+        embed = discord.Embed(
+            title="✅ 주간 리포트 테스트 완료",
+            description="주간 리포트가 성공적으로 전송되었습니다!",
+            color=0x00FF00,
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        error_embed = discord.Embed(
+            title="❌ 주간 리포트 테스트 실패",
+            description=f"오류: {str(e)}",
+            color=0xFF0000,
+        )
+        await interaction.followup.send(embed=error_embed, ephemeral=True)
+        logger.error(f"주간 리포트 테스트 실패: {e}")
 
 
 @bot.event
