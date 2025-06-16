@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from database import Database
 from utils import calculate_penalty, get_week_start_end
+from config import MIN_WEEKLY_GOAL, MAX_WEEKLY_GOAL
 
 # 환경변수 로드
 load_dotenv()
@@ -73,10 +74,52 @@ bot = WorkoutBot()
 @bot.tree.command(name="set-goals", description="주간 운동 목표를 설정합니다 (4~7회)")
 async def set_goals(interaction: discord.Interaction, count: int):
     """운동 목표 설정 슬래시 커맨드"""
-    # TODO: 구현 예정
-    await interaction.response.send_message(
-        f"목표 설정 기능 (구현 예정): {count}회", ephemeral=True
+    # 입력값 검증
+    if count < MIN_WEEKLY_GOAL or count > MAX_WEEKLY_GOAL:
+        await interaction.response.send_message(
+            f"⚠️ 운동 목표는 {MIN_WEEKLY_GOAL}회부터 {MAX_WEEKLY_GOAL}회까지 설정할 수 있습니다.",
+            ephemeral=True,
+        )
+        return
+
+    # 데이터베이스에 목표 저장
+    success = await bot.db.set_user_goal(
+        user_id=interaction.user.id,
+        username=interaction.user.display_name,
+        weekly_goal=count,
     )
+
+    if success:
+        # 현재 주차 정보 가져오기
+        week_start, week_end = get_week_start_end()
+        week_start_str = week_start.strftime("%m월 %d일")
+        week_end_str = week_end.strftime("%m월 %d일")
+
+        embed = discord.Embed(
+            title="🎯 운동 목표 설정 완료!",
+            description=f"주간 운동 목표가 **{count}회**로 설정되었습니다.",
+            color=0x00FF00,
+        )
+        embed.add_field(
+            name="📅 적용 기간",
+            value=f"이번 주 ({week_start_str} ~ {week_end_str})",
+            inline=False,
+        )
+        embed.add_field(
+            name="💰 벌금 정보",
+            value=f"목표 미달성 시 하루당 **{10800//count:,}원**의 벌금이 부과됩니다.",
+            inline=False,
+        )
+        embed.set_footer(text="💪 화이팅! 목표를 달성해보세요!")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        logger.info(f"목표 설정 완료: {interaction.user.display_name} - {count}회")
+    else:
+        await interaction.response.send_message(
+            "❌ 목표 설정 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            ephemeral=True,
+        )
+        logger.error(f"목표 설정 실패: {interaction.user.display_name} - {count}회")
 
 
 @bot.tree.command(name="get-info", description="이번 주 운동 현황과 벌금을 조회합니다")
