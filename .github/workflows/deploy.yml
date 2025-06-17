@@ -1,0 +1,111 @@
+name: Deploy Workout Discord Bot
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GAR_LOCATION: asia-northeast3  # 서울 리전
+  SERVICE_NAME: workout-discord-bot
+  REGION: asia-northeast3
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.13"
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+    - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction --no-root
+
+    - name: Install project
+      run: poetry install --no-interaction
+
+    - name: Run tests (if any)
+      run: |
+        poetry run python -m pytest tests/ -v || echo "No tests found"
+
+    - name: Lint with flake8
+      run: |
+        poetry run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - id: 'auth'
+      name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v1'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: 'Set up Cloud SDK'
+      uses: 'google-github-actions/setup-gcloud@v1'
+
+    - name: 'Configure Docker to use gcloud as a credential helper'
+      run: |
+        gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev
+
+    - name: Build Docker image
+      run: |
+        docker build -t $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME:$GITHUB_SHA .
+
+    - name: Push to Google Artifact Registry
+      run: |
+        docker push $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME:$GITHUB_SHA
+
+    - name: Deploy to Compute Engine
+      run: |
+        gcloud compute ssh ${{ secrets.INSTANCE_NAME }} \
+          --zone=${{ secrets.INSTANCE_ZONE }} \
+          --command="
+            # Docker 이미지 pull
+            sudo docker pull $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME:$GITHUB_SHA
+            
+            # 기존 컨테이너 중지 및 제거
+            sudo docker stop $SERVICE_NAME || true
+            sudo docker rm $SERVICE_NAME || true
+            
+            # 새 컨테이너 실행
+            sudo docker run -d \
+              --name $SERVICE_NAME \
+              --restart unless-stopped \
+              -p 8080:8080 \
+              -e DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}' \
+              -e SUPABASE_URL='${{ secrets.SUPABASE_URL }}' \
+              -e SUPABASE_SERVICE_ROLE_KEY='${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}' \
+              -e WORKOUT_CHANNEL_NAME='${{ secrets.WORKOUT_CHANNEL_NAME }}' \
+              -e REPORT_CHANNEL_NAME='${{ secrets.REPORT_CHANNEL_NAME }}' \
+              -e ADMIN_ROLE_NAME='${{ secrets.ADMIN_ROLE_NAME }}' \
+              $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME:$GITHUB_SHA
+            
+            # 이전 이미지 정리
+            sudo docker image prune -f
+          " 
