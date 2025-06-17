@@ -40,8 +40,8 @@ jobs:
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
       run: poetry install --no-interaction --no-root
 
-    - name: Install project
-      run: poetry install --no-interaction
+    - name: Install project dependencies
+      run: poetry install --no-interaction --no-root
 
     - name: Run tests (if any)
       run: |
