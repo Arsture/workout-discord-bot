@@ -94,7 +94,7 @@ jobs:
         export GITHUB_SHA="${{ github.sha }}"
         
         # Docker 인증 설정
-        gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet
+        sudo gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet
         
         # Docker 이미지 pull
         echo "Pulling Docker image..."
