@@ -81,31 +81,59 @@ jobs:
       run: |
         docker push $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME:$GITHUB_SHA
 
+    - name: Create deployment script
+      run: |
+        cat > deploy.sh << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        # 환경변수 설정
+        export GAR_LOCATION="asia-northeast3"
+        export PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+        export SERVICE_NAME="workout-discord-bot"
+        export GITHUB_SHA="${{ github.sha }}"
+        
+        # Docker 인증 설정
+        gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet
+        
+        # Docker 이미지 pull
+        echo "Pulling Docker image..."
+        sudo docker pull $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME:$GITHUB_SHA
+        
+        # 기존 컨테이너 중지 및 제거
+        echo "Stopping existing container..."
+        sudo docker stop $SERVICE_NAME || true
+        sudo docker rm $SERVICE_NAME || true
+        
+        # 새 컨테이너 실행
+        echo "Starting new container..."
+        sudo docker run -d \
+          --name $SERVICE_NAME \
+          --restart unless-stopped \
+          -p 8080:8080 \
+          -e DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}' \
+          -e SUPABASE_URL='${{ secrets.SUPABASE_URL }}' \
+          -e SUPABASE_SERVICE_ROLE_KEY='${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}' \
+          -e WORKOUT_CHANNEL_NAME='${{ secrets.WORKOUT_CHANNEL_NAME }}' \
+          -e REPORT_CHANNEL_NAME='${{ secrets.REPORT_CHANNEL_NAME }}' \
+          -e ADMIN_ROLE_NAME='${{ secrets.ADMIN_ROLE_NAME }}' \
+          $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME:$GITHUB_SHA
+        
+        # 컨테이너 상태 확인
+        echo "Checking container status..."
+        sudo docker ps | grep $SERVICE_NAME || echo "Container not found in ps"
+        sudo docker logs $SERVICE_NAME --tail=20 || echo "Could not get logs"
+        
+        # 이전 이미지 정리
+        echo "Cleaning up old images..."
+        sudo docker image prune -f
+        
+        echo "Deployment completed successfully!"
+        EOF
+        
+        chmod +x deploy.sh
+
     - name: Deploy to Compute Engine
       run: |
-        gcloud compute ssh ${{ secrets.INSTANCE_NAME }} \
-          --zone=${{ secrets.INSTANCE_ZONE }} \
-          --command="
-            # Docker 이미지 pull
-            sudo docker pull $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME:$GITHUB_SHA
-            
-            # 기존 컨테이너 중지 및 제거
-            sudo docker stop $SERVICE_NAME || true
-            sudo docker rm $SERVICE_NAME || true
-            
-            # 새 컨테이너 실행
-            sudo docker run -d \
-              --name $SERVICE_NAME \
-              --restart unless-stopped \
-              -p 8080:8080 \
-              -e DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}' \
-              -e SUPABASE_URL='${{ secrets.SUPABASE_URL }}' \
-              -e SUPABASE_SERVICE_ROLE_KEY='${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}' \
-              -e WORKOUT_CHANNEL_NAME='${{ secrets.WORKOUT_CHANNEL_NAME }}' \
-              -e REPORT_CHANNEL_NAME='${{ secrets.REPORT_CHANNEL_NAME }}' \
-              -e ADMIN_ROLE_NAME='${{ secrets.ADMIN_ROLE_NAME }}' \
-              $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME:$GITHUB_SHA
-            
-            # 이전 이미지 정리
-            sudo docker image prune -f
-          " 
+        gcloud compute scp deploy.sh ${{ secrets.INSTANCE_NAME }}:~/deploy.sh --zone=${{ secrets.INSTANCE_ZONE }} --quiet
+        gcloud compute ssh ${{ secrets.INSTANCE_NAME }} --zone=${{ secrets.INSTANCE_ZONE }} --command="bash ~/deploy.sh" --quiet 
