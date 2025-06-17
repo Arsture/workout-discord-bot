@@ -16,6 +16,7 @@ from utils import calculate_penalty, get_week_start_end, format_currency, get_to
 from config import (
     MIN_WEEKLY_GOAL,
     MAX_WEEKLY_GOAL,
+    MODIFY_DEADLINE,
     WORKOUT_CHANNEL_NAME,
     SUPPORTED_IMAGE_EXTENSIONS,
     REPORT_DAY_OF_WEEK,
@@ -24,6 +25,7 @@ from config import (
     REPORT_TIMEZONE,
     REPORT_CHANNEL_NAME,
     ADMIN_ROLE_NAME,
+    KOREAN_WEEKDAY_NAMES,
 )
 
 # 환경변수 로드
@@ -263,6 +265,18 @@ async def set_goals(interaction: discord.Interaction, count: int):
             ephemeral=True,
         )
         return
+    
+    
+    # 현재 주차 정보 가져오기
+    week_start, week_end = get_week_start_end()
+    
+    # 수정 가능기한 확인
+    if week_start + timedelta(days = MODIFY_DEADLINE) < datetime.now():
+        await interaction.response.send_message(
+            f"⚠️ 목표 수정은 {KOREAN_WEEKDAY_NAMES[MODIFY_DEADLINE - 1]}까지만 가능합니다.",
+            ephemeral=True,
+        )
+        return
 
     # 데이터베이스에 목표 저장
     success = await bot.db.set_user_goal(
@@ -272,8 +286,7 @@ async def set_goals(interaction: discord.Interaction, count: int):
     )
 
     if success:
-        # 현재 주차 정보 가져오기
-        week_start, week_end = get_week_start_end()
+        # 현재 주차 정보 한글로 변환
         week_start_str = week_start.strftime("%m월 %d일")
         week_end_str = week_end.strftime("%m월 %d일")
 
@@ -420,12 +433,12 @@ async def get_info(interaction: discord.Interaction):
 def create_progress_bar(current: int, total: int, length: int = 10) -> str:
     """진행률 바 생성"""
     if total == 0:
-        return "📊 " + "▱" * length
+        return "📊 " + "⬜︎" * length
 
     filled = min(int((current / total) * length), length)
     empty = length - filled
 
-    progress = "📊 " + "▰" * filled + "▱" * empty
+    progress = "📊 " + "⬛︎" * filled + "⬜︎" * empty
     progress += f" {current}/{total}"
 
     return progress
