@@ -20,7 +20,7 @@ RUN poetry config virtualenvs.create false
 COPY pyproject.toml poetry.lock ./
 
 # 프로덕션 의존성만 설치
-RUN poetry install --only=main --no-dev
+RUN poetry install --only=main --no-root
 
 # 애플리케이션 코드 복사
 COPY . .
