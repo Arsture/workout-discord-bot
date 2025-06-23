@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  workout-bot:
+    build: .
+    container_name: workout-discord-bot
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - WORKOUT_CHANNEL_NAME=${WORKOUT_CHANNEL_NAME:-workout}
+      - REPORT_CHANNEL_NAME=${REPORT_CHANNEL_NAME:-workout}
+      - ADMIN_ROLE_NAME=${ADMIN_ROLE_NAME:-Admin}
+      - REPORT_DAY_OF_WEEK=${REPORT_DAY_OF_WEEK:-0}
+      - REPORT_HOUR=${REPORT_HOUR:-0}
+      - REPORT_MINUTE=${REPORT_MINUTE:-0}
+      - REPORT_TIMEZONE=${REPORT_TIMEZONE:-Asia/Seoul}
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      # 로그 볼륨 (선택사항)
+      - ./logs:/app/logs
+    networks:
+      - workout-bot-network
+
+networks:
+  workout-bot-network:
+    driver: bridge 

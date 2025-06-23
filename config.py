@@ -9,6 +9,10 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
 WORKOUT_CHANNEL_NAME = os.getenv("WORKOUT_CHANNEL_NAME", "workout-debugging")
 
+# Supabase 설정
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
 # 벌금 설정
 BASE_PENALTY = 10080.0  # 기본 벌금 10,080원
 
@@ -21,18 +25,14 @@ MODIFY_DEADLINE = 2  # 월요일 00:00:00 + N일, 0이면 목표 초기 설정 �
 
 # 한국 요일 이름
 KOREAN_WEEKDAY_NAMES = [
-    "월요일",
     "화요일",
+    "월요일",
     "수요일",
     "목요일",
     "금요일",
-    "토요일",
     "일요일",
+    "토요일",
 ]
-
-# 데이터베이스 설정
-DATABASE_PATH = "workout_bot.db"
-
 # 지원하는 이미지 확장자
 SUPPORTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
 

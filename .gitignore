@@ -1,3 +1,51 @@
+# Environment variables
 .env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.pytest_cache/
+
+# Database files
 *.db
+*.sqlite
+*.sqlite3
+
+# GCP Service Account Keys (NEVER COMMIT THESE!)
+github-actions-key.json
+*-key.json
+service-account-*.json
+
+# GitHub Secrets backup files
+github-secrets-*.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/

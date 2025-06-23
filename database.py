@@ -1,91 +1,86 @@
-import aiosqlite
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
+from supabase import create_client, Client
+from config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 logger = logging.getLogger(__name__)
 
 
 class Database:
-    def __init__(self, db_path: str = "workout_bot.db"):
-        self.db_path = db_path
+    def __init__(self):
+        """Supabase 클라이언트 초기화"""
+        if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+            raise ValueError("Supabase URL과 Service Role Key가 필요합니다.")
+
+        self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        logger.info("Supabase 클라이언트 초기화 완료")
 
     async def init_db(self):
-        """데이터베이스 테이블 초기화"""
-        async with aiosqlite.connect(self.db_path) as db:
-            # 사용자 설정 테이블
-            await db.execute(
-                """
-                CREATE TABLE IF NOT EXISTS user_settings (
-                    user_id INTEGER PRIMARY KEY,
-                    username TEXT NOT NULL,
-                    weekly_goal INTEGER NOT NULL DEFAULT 4,
-                    total_penalty REAL NOT NULL DEFAULT 0.0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """
+        """데이터베이스 테이블 확인 및 초기화"""
+        try:
+            # 테이블이 이미 존재하는지 확인 (스키마 체크)
+            # Supabase에서는 테이블을 웹 인터페이스나 SQL 에디터에서 미리 생성해야 합니다.
+            # 여기서는 연결만 확인합니다.
+            response = (
+                self.supabase.table("user_settings")
+                .select("count", count="exact")
+                .limit(1)
+                .execute()
             )
-
-            # 운동 기록 테이블
-            await db.execute(
-                """
-                CREATE TABLE IF NOT EXISTS workout_records (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    username TEXT NOT NULL,
-                    workout_date DATE NOT NULL,
-                    week_start_date DATE NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_revoked BOOLEAN DEFAULT FALSE,
-                    FOREIGN KEY (user_id) REFERENCES user_settings (user_id),
-                    UNIQUE(user_id, workout_date)
-                )
-            """
-            )
-
-            # 주간 벌금 기록 테이블
-            await db.execute(
-                """
-                CREATE TABLE IF NOT EXISTS weekly_penalties (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    username TEXT NOT NULL,
-                    week_start_date DATE NOT NULL,
-                    goal_count INTEGER NOT NULL,
-                    actual_count INTEGER NOT NULL,
-                    penalty_amount REAL NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES user_settings (user_id),
-                    UNIQUE(user_id, week_start_date)
-                )
-            """
-            )
-
-            await db.commit()
-            logger.info("데이터베이스 테이블 초기화 완료")
+            logger.info("Supabase 데이터베이스 연결 확인 완료")
+        except Exception as e:
+            logger.error(f"데이터베이스 초기화 실패: {e}")
+            raise
 
     async def set_user_goal(
         self, user_id: int, username: str, weekly_goal: int
     ) -> bool:
         """사용자의 주간 운동 목표 설정"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    """
-                    INSERT OR REPLACE INTO user_settings 
-                    (user_id, username, weekly_goal, total_penalty, updated_at)
-                    VALUES (?, ?, ?, 
-                            COALESCE((SELECT total_penalty FROM user_settings WHERE user_id = ?), 0),
-                            ?)
-                """,
-                    (user_id, username, weekly_goal, user_id, datetime.now()),
+            # 기존 사용자 확인
+            existing_user = (
+                self.supabase.table("user_settings")
+                .select("*")
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if existing_user.data:
+                # 기존 사용자 업데이트
+                response = (
+                    self.supabase.table("user_settings")
+                    .update(
+                        {
+                            "username": username,
+                            "weekly_goal": weekly_goal,
+                            "updated_at": datetime.now().isoformat(),
+                        }
+                    )
+                    .eq("user_id", user_id)
+                    .execute()
                 )
-                await db.commit()
-                logger.info(
-                    f"사용자 {username}(ID: {user_id})의 목표를 {weekly_goal}회로 설정"
+            else:
+                # 새 사용자 생성
+                response = (
+                    self.supabase.table("user_settings")
+                    .insert(
+                        {
+                            "user_id": user_id,
+                            "username": username,
+                            "weekly_goal": weekly_goal,
+                            "total_penalty": 0.0,
+                            "created_at": datetime.now().isoformat(),
+                            "updated_at": datetime.now().isoformat(),
+                        }
+                    )
+                    .execute()
                 )
-                return True
+
+            logger.info(
+                f"사용자 {username}(ID: {user_id})의 목표를 {weekly_goal}회로 설정"
+            )
+            return True
         except Exception as e:
             logger.error(f"목표 설정 실패: {e}")
             return False
@@ -93,25 +88,16 @@ class Database:
     async def get_user_settings(self, user_id: int) -> Optional[Dict]:
         """사용자 설정 조회"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                async with db.execute(
-                    """
-                    SELECT user_id, username, weekly_goal, total_penalty, created_at, updated_at
-                    FROM user_settings WHERE user_id = ?
-                """,
-                    (user_id,),
-                ) as cursor:
-                    row = await cursor.fetchone()
-                    if row:
-                        return {
-                            "user_id": row[0],
-                            "username": row[1],
-                            "weekly_goal": row[2],
-                            "total_penalty": row[3],
-                            "created_at": row[4],
-                            "updated_at": row[5],
-                        }
-                    return None
+            response = (
+                self.supabase.table("user_settings")
+                .select("*")
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if response.data:
+                return response.data[0]
+            return None
         except Exception as e:
             logger.error(f"사용자 설정 조회 실패: {e}")
             return None
@@ -125,24 +111,41 @@ class Database:
     ) -> bool:
         """운동 기록 추가 (하루 1회 제한)"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    """
-                    INSERT OR IGNORE INTO workout_records 
-                    (user_id, username, workout_date, week_start_date)
-                    VALUES (?, ?, ?, ?)
-                """,
-                    (user_id, username, workout_date.date(), week_start_date.date()),
-                )
+            workout_date_str = workout_date.date().isoformat()
+            week_start_str = week_start_date.date().isoformat()
 
-                # 실제로 삽입되었는지 확인
-                if db.total_changes > 0:
-                    await db.commit()
-                    logger.info(f"운동 기록 추가: {username} - {workout_date.date()}")
-                    return True
-                else:
-                    logger.info(f"이미 기록된 운동: {username} - {workout_date.date()}")
-                    return False
+            # 이미 해당 날짜에 기록이 있는지 확인
+            existing_record = (
+                self.supabase.table("workout_records")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("workout_date", workout_date_str)
+                .eq("is_revoked", False)
+                .execute()
+            )
+
+            if existing_record.data:
+                logger.info(f"이미 기록된 운동: {username} - {workout_date_str}")
+                return False
+
+            # 새 운동 기록 추가
+            response = (
+                self.supabase.table("workout_records")
+                .insert(
+                    {
+                        "user_id": user_id,
+                        "username": username,
+                        "workout_date": workout_date_str,
+                        "week_start_date": week_start_str,
+                        "created_at": datetime.now().isoformat(),
+                        "is_revoked": False,
+                    }
+                )
+                .execute()
+            )
+
+            logger.info(f"운동 기록 추가: {username} - {workout_date_str}")
+            return True
         except Exception as e:
             logger.error(f"운동 기록 추가 실패: {e}")
             return False
@@ -150,27 +153,35 @@ class Database:
     async def revoke_workout_record(self, user_id: int, workout_date: datetime) -> bool:
         """운동 기록 취소"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    """
-                    UPDATE workout_records 
-                    SET is_revoked = TRUE 
-                    WHERE user_id = ? AND workout_date = ? AND is_revoked = FALSE
-                """,
-                    (user_id, workout_date.date()),
-                )
+            workout_date_str = workout_date.date().isoformat()
 
-                if db.total_changes > 0:
-                    await db.commit()
-                    logger.info(
-                        f"운동 기록 취소: 사용자 {user_id} - {workout_date.date()}"
-                    )
-                    return True
-                else:
-                    logger.info(
-                        f"취소할 운동 기록 없음: 사용자 {user_id} - {workout_date.date()}"
-                    )
-                    return False
+            # 취소할 기록 확인
+            existing_record = (
+                self.supabase.table("workout_records")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("workout_date", workout_date_str)
+                .eq("is_revoked", False)
+                .execute()
+            )
+
+            if not existing_record.data:
+                logger.info(
+                    f"취소할 운동 기록 없음: 사용자 {user_id} - {workout_date_str}"
+                )
+                return False
+
+            # 기록 취소 (is_revoked를 True로 설정)
+            response = (
+                self.supabase.table("workout_records")
+                .update({"is_revoked": True})
+                .eq("user_id", user_id)
+                .eq("workout_date", workout_date_str)
+                .execute()
+            )
+
+            logger.info(f"운동 기록 취소: 사용자 {user_id} - {workout_date_str}")
+            return True
         except Exception as e:
             logger.error(f"운동 기록 취소 실패: {e}")
             return False
@@ -180,16 +191,18 @@ class Database:
     ) -> int:
         """특정 주의 운동 횟수 조회"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                async with db.execute(
-                    """
-                    SELECT COUNT(*) FROM workout_records 
-                    WHERE user_id = ? AND week_start_date = ? AND is_revoked = FALSE
-                """,
-                    (user_id, week_start_date.date()),
-                ) as cursor:
-                    row = await cursor.fetchone()
-                    return row[0] if row else 0
+            week_start_str = week_start_date.date().isoformat()
+
+            response = (
+                self.supabase.table("workout_records")
+                .select("*", count="exact")
+                .eq("user_id", user_id)
+                .eq("week_start_date", week_start_str)
+                .eq("is_revoked", False)
+                .execute()
+            )
+
+            return response.count if response.count else 0
         except Exception as e:
             logger.error(f"주간 운동 횟수 조회 실패: {e}")
             return 0
@@ -197,38 +210,45 @@ class Database:
     async def get_all_users_weekly_data(self, week_start_date: datetime) -> List[Dict]:
         """모든 사용자의 주간 데이터 조회"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                async with db.execute(
-                    """
-                    SELECT 
-                        us.user_id,
-                        us.username,
-                        us.weekly_goal,
-                        us.total_penalty,
-                        COALESCE(wr.workout_count, 0) as workout_count
-                    FROM user_settings us
-                    LEFT JOIN (
-                        SELECT user_id, COUNT(*) as workout_count
-                        FROM workout_records 
-                        WHERE week_start_date = ? AND is_revoked = FALSE
-                        GROUP BY user_id
-                    ) wr ON us.user_id = wr.user_id
-                """,
-                    (week_start_date.date(),),
-                ) as cursor:
-                    rows = await cursor.fetchall()
-                    return [
-                        {
-                            "user_id": row[0],
-                            "username": row[1],
-                            "weekly_goal": row[2],
-                            "total_penalty": row[3],
-                            "workout_count": row[4],
-                        }
-                        for row in rows
-                    ]
+            week_start_str = week_start_date.date().isoformat()
+
+            # 모든 사용자 설정 가져오기
+            users_response = self.supabase.table("user_settings").select("*").execute()
+
+            if not users_response.data:
+                return []
+
+            result = []
+            for user in users_response.data:
+                user_id = user["user_id"]
+
+                # 해당 주의 운동 횟수 조회
+                workout_count_response = (
+                    self.supabase.table("workout_records")
+                    .select("*", count="exact")
+                    .eq("user_id", user_id)
+                    .eq("week_start_date", week_start_str)
+                    .eq("is_revoked", False)
+                    .execute()
+                )
+
+                workout_count = (
+                    workout_count_response.count if workout_count_response.count else 0
+                )
+
+                result.append(
+                    {
+                        "user_id": user_id,
+                        "username": user["username"],
+                        "weekly_goal": user["weekly_goal"],
+                        "workout_count": workout_count,
+                        "total_penalty": user["total_penalty"],
+                    }
+                )
+
+            return result
         except Exception as e:
-            logger.error(f"전체 사용자 주간 데이터 조회 실패: {e}")
+            logger.error(f"모든 사용자 주간 데이터 조회 실패: {e}")
             return []
 
     async def add_weekly_penalty_record(
@@ -240,81 +260,93 @@ class Database:
         actual_count: int,
         penalty_amount: float,
     ) -> bool:
-        """주간 벌금 기록 추가 및 누적 벌금 업데이트 (트랜잭션)"""
+        """주간 벌금 기록 추가 (중복 방지)"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                # 1. 주간 벌금 기록 (이미 있으면 무시)
-                await db.execute(
-                    """
-                    INSERT OR IGNORE INTO weekly_penalties
-                    (user_id, username, week_start_date, goal_count, actual_count, penalty_amount, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        user_id,
-                        username,
-                        week_start_date.date(),
-                        goal_count,
-                        actual_count,
-                        penalty_amount,
-                        datetime.now(),
-                    ),
+            week_start_str = week_start_date.date().isoformat()
+
+            # 이미 해당 주에 벌금 기록이 있는지 확인
+            existing_penalty = (
+                self.supabase.table("weekly_penalties")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("week_start_date", week_start_str)
+                .execute()
+            )
+
+            if existing_penalty.data:
+                logger.info(f"이미 벌금 기록 존재: {username} - {week_start_str}")
+                return False
+
+            # 새 벌금 기록 추가
+            penalty_response = (
+                self.supabase.table("weekly_penalties")
+                .insert(
+                    {
+                        "user_id": user_id,
+                        "username": username,
+                        "week_start_date": week_start_str,
+                        "goal_count": goal_count,
+                        "actual_count": actual_count,
+                        "penalty_amount": penalty_amount,
+                        "created_at": datetime.now().isoformat(),
+                    }
+                )
+                .execute()
+            )
+
+            # 사용자의 총 벌금 업데이트
+            user_settings = await self.get_user_settings(user_id)
+            if user_settings:
+                new_total_penalty = user_settings["total_penalty"] + penalty_amount
+                update_response = (
+                    self.supabase.table("user_settings")
+                    .update(
+                        {
+                            "total_penalty": new_total_penalty,
+                            "updated_at": datetime.now().isoformat(),
+                        }
+                    )
+                    .eq("user_id", user_id)
+                    .execute()
                 )
 
-                # 2. 실제로 새로운 기록이 추가되었는지 확인
-                if db.total_changes > 0:
-                    # 3. 누적 벌금 업데이트
-                    await db.execute(
-                        """
-                        UPDATE user_settings
-                        SET total_penalty = total_penalty + ?, updated_at = ?
-                        WHERE user_id = ?
-                    """,
-                        (penalty_amount, datetime.now(), user_id),
-                    )
-                    await db.commit()
-                    logger.info(
-                        f"주간 벌금 기록 및 누적 벌금 업데이트 완료: {username} (+{penalty_amount}원)"
-                    )
-                    return True
-                else:
-                    logger.info(
-                        f"이미 처리된 주간 벌금: {username} - {week_start_date.date()}"
-                    )
-                    return False
+            logger.info(f"주간 벌금 기록 추가: {username} - {penalty_amount}원")
+            return True
         except Exception as e:
-            logger.error(f"주간 벌금 처리 실패: {e}")
+            logger.error(f"주간 벌금 기록 추가 실패: {e}")
             return False
 
     async def get_total_accumulated_penalty(self) -> float:
-        """모든 사용자의 전체 누적 벌금 합계 조회"""
+        """전체 누적 벌금 조회"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                async with db.execute(
-                    "SELECT SUM(total_penalty) FROM user_settings"
-                ) as cursor:
-                    row = await cursor.fetchone()
-                    return row[0] if row and row[0] is not None else 0.0
+            response = (
+                self.supabase.table("user_settings").select("total_penalty").execute()
+            )
+
+            if response.data:
+                total_penalty = sum(user["total_penalty"] for user in response.data)
+                return total_penalty
+            return 0.0
         except Exception as e:
-            logger.error(f"전체 누적 벌금 합계 조회 실패: {e}")
+            logger.error(f"전체 누적 벌금 조회 실패: {e}")
             return 0.0
 
     async def reset_database(self) -> bool:
-        """데이터베이스의 모든 데이터를 삭제하고 테이블을 재생성"""
+        """데이터베이스 초기화 (모든 데이터 삭제)"""
         try:
-            async with aiosqlite.connect(self.db_path) as db:
-                # 모든 테이블 삭제
-                await db.execute("DROP TABLE IF EXISTS weekly_penalties")
-                await db.execute("DROP TABLE IF EXISTS workout_records")
-                await db.execute("DROP TABLE IF EXISTS user_settings")
+            # 테이블 순서대로 데이터 삭제
+            # 먼저 외래키 참조가 있는 테이블부터 삭제
 
-                await db.commit()
-                logger.info("모든 테이블 삭제 완료")
+            # 1. weekly_penalties 테이블 모든 데이터 삭제
+            self.supabase.table("weekly_penalties").delete().neq("id", 0).execute()
 
-            # 테이블 재생성
-            await self.init_db()
+            # 2. workout_records 테이블 모든 데이터 삭제
+            self.supabase.table("workout_records").delete().neq("id", 0).execute()
 
-            logger.info("데이터베이스가 성공적으로 초기화되었습니다.")
+            # 3. user_settings 테이블 모든 데이터 삭제
+            self.supabase.table("user_settings").delete().neq("user_id", 0).execute()
+
+            logger.warning("데이터베이스가 완전히 초기화되었습니다")
             return True
         except Exception as e:
             logger.error(f"데이터베이스 초기화 실패: {e}")
