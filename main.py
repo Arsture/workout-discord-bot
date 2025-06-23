@@ -265,13 +265,12 @@ async def set_goals(interaction: discord.Interaction, count: int):
             ephemeral=True,
         )
         return
-    
-    
+
     # 현재 주차 정보 가져오기
     week_start, week_end = get_week_start_end()
-    
+
     # 수정 가능기한 확인
-    if week_start + timedelta(days = MODIFY_DEADLINE) < datetime.now():
+    if week_start + timedelta(days=MODIFY_DEADLINE) < datetime.now():
         await interaction.response.send_message(
             f"⚠️ 목표 수정은 {KOREAN_WEEKDAY_NAMES[MODIFY_DEADLINE - 1]}까지만 가능합니다.",
             ephemeral=True,
@@ -537,6 +536,130 @@ async def revoke(
         await interaction.response.send_message(embed=embed, ephemeral=True)
         logger.info(
             f"운동 기록 취소 실패: {member.display_name} - {target_date.strftime('%Y-%m-%d')} (취소할 기록 없음)"
+        )
+
+
+@bot.tree.command(
+    name="add-workout",
+    description="관리자가 특정 날짜에 운동 기록을 수동으로 추가합니다 (관리자 전용)",
+)
+@discord.app_commands.describe(
+    member="운동 기록을 추가할 사용자",
+    date="운동한 날짜 (YYYY-MM-DD 형식, 기본값: 오늘)",
+)
+async def add_workout(
+    interaction: discord.Interaction, member: discord.Member, date: str = None
+):
+    """관리자용 운동 기록 수동 추가 슬래시 커맨드"""
+    # 관리자 권한 확인
+    if not any(role.name == ADMIN_ROLE_NAME for role in interaction.user.roles):
+        await interaction.response.send_message(
+            f"❌ 이 명령어는 {ADMIN_ROLE_NAME} 권한이 필요합니다.",
+            ephemeral=True,
+        )
+        return
+
+    # 대상 사용자의 설정 확인
+    user_settings = await bot.db.get_user_settings(member.id)
+    if not user_settings:
+        await interaction.response.send_message(
+            f"❌ {member.display_name}님이 아직 목표를 설정하지 않았습니다.\n"
+            f"`/set-goals` 명령어로 먼저 목표를 설정해주세요.",
+            ephemeral=True,
+        )
+        return
+
+    # 날짜 파싱 (기본값: 오늘)
+    if date:
+        try:
+            from datetime import datetime
+
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ 날짜 형식이 올바르지 않습니다. (예: 2025-01-15)", ephemeral=True
+            )
+            return
+    else:
+        target_date = get_today_date()
+
+    # 해당 날짜가 속한 주의 시작일 계산
+    week_start, _ = get_week_start_end(target_date)
+
+    # 운동 기록 추가 시도
+    success = await bot.db.add_workout_record(
+        member.id, member.display_name, target_date, week_start
+    )
+
+    if success:
+        # 현재 주차 운동 횟수 및 목표 조회
+        current_week_start, _ = get_week_start_end()
+        current_count = await bot.db.get_weekly_workout_count(
+            member.id, current_week_start
+        )
+        weekly_goal = user_settings["weekly_goal"]
+
+        embed = discord.Embed(
+            title="✅ 운동 기록 추가 완료",
+            description=f"{member.display_name}님의 {target_date.strftime('%m월 %d일')} 운동 기록이 추가되었습니다.",
+            color=0x00FF00,
+        )
+
+        # 만약 현재 주에 기록이 추가된 경우 진행 상황 표시
+        if week_start == current_week_start:
+            progress_bar = create_progress_bar(current_count, weekly_goal)
+            embed.add_field(name="📈 현재 진행 상황", value=progress_bar, inline=False)
+
+            # 업데이트된 벌금 정보
+            penalty = calculate_penalty(weekly_goal, current_count)
+            embed.add_field(
+                name="💰 현재 예상 벌금", value=format_currency(penalty), inline=True
+            )
+
+            if current_count < weekly_goal:
+                remaining = weekly_goal - current_count
+                embed.add_field(
+                    name="🎯 남은 목표", value=f"{remaining}회", inline=True
+                )
+        else:
+            # 다른 주차의 기록인 경우
+            target_week_count = await bot.db.get_weekly_workout_count(
+                member.id, week_start
+            )
+            embed.add_field(
+                name="📅 해당 주차 운동 횟수",
+                value=f"{target_week_count}/{weekly_goal}회",
+                inline=True,
+            )
+
+        embed.add_field(
+            name="👤 추가 요청자", value=interaction.user.mention, inline=True
+        )
+
+        embed.set_footer(
+            text=f"추가된 날짜: {target_date.strftime('%Y년 %m월 %d일')} | 관리자 승인"
+        )
+
+        await interaction.response.send_message(embed=embed)
+        logger.info(
+            f"운동 기록 수동 추가: {member.display_name} - {target_date.strftime('%Y-%m-%d')} (요청자: {interaction.user.display_name})"
+        )
+
+    else:
+        embed = discord.Embed(
+            title="⚠️ 기록 추가 실패",
+            description=f"{member.display_name}님의 {target_date.strftime('%m월 %d일')} 운동 기록이 이미 존재합니다.",
+            color=0xFFFF00,
+        )
+        embed.add_field(
+            name="📅 확인 사항",
+            value="• 해당 날짜에 이미 운동 기록이 있습니다\n• 기록을 수정하려면 먼저 `/revoke` 명령어로 기존 기록을 취소하세요",
+            inline=False,
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        logger.info(
+            f"운동 기록 수동 추가 실패: {member.display_name} - {target_date.strftime('%Y-%m-%d')} (이미 존재)"
         )
 
 
