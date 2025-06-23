@@ -20,6 +20,19 @@ BASE_PENALTY = 10080.0  # 기본 벌금 10,080원
 MIN_WEEKLY_GOAL = 4
 MAX_WEEKLY_GOAL = 7
 
+# 목표 수정 가능 기간
+MODIFY_DEADLINE = 2  # 월요일 00:00:00 + N일, 0이면 목표 초기 설정 및 수정 불가능
+
+# 한국 요일 이름
+KOREAN_WEEKDAY_NAMES = [
+    "화요일",
+    "월요일",
+    "수요일",
+    "목요일",
+    "금요일",
+    "일요일",
+    "토요일",
+]
 # 지원하는 이미지 확장자
 SUPPORTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
 

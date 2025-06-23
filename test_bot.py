@@ -6,7 +6,8 @@
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from config import KOREAN_WEEKDAY_NAMES, MODIFY_DEADLINE
 from database import Database
 from utils import calculate_penalty, get_week_start_end, format_currency
 
@@ -27,6 +28,12 @@ async def test_database():
     # 테스트 사용자 데이터
     test_user_id = 123456789
     test_username = "테스트유저"
+
+    # 0. 수정기한 데드라인 테스트 (현재 요일, 수정가능한 요일 한국어로)
+    week_start, _ = get_week_start_end()
+    print("\n0️⃣ 수정기한 데드라인 테스트")
+    print(f"현재 날짜: {datetime.now()}")
+    print(f"수정기한 데드라인: {week_start + timedelta(days=MODIFY_DEADLINE)}, {KOREAN_WEEKDAY_NAMES[MODIFY_DEADLINE - 1]}")
 
     # 1. 목표 설정 테스트
     print("\n1️⃣ 목표 설정 테스트")
@@ -86,7 +93,6 @@ async def test_database():
 
     # 6. 추가 운동 기록 테스트 (여러 날)
     print("\n6️⃣ 여러 날 운동 기록 테스트")
-    from datetime import timedelta
 
     # 어제 기록 추가
     yesterday = today - timedelta(days=1)
