@@ -20,9 +20,13 @@ CREATE TABLE IF NOT EXISTS workout_records (
     week_start_date DATE NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     is_revoked BOOLEAN DEFAULT FALSE,
-    FOREIGN KEY (user_id) REFERENCES user_settings (user_id) ON DELETE CASCADE,
-    UNIQUE(user_id, workout_date)
+    FOREIGN KEY (user_id) REFERENCES user_settings (user_id) ON DELETE CASCADE
 );
+
+-- 부분 UNIQUE 제약조건: is_revoked=FALSE인 기록만 하나씩 허용
+CREATE UNIQUE INDEX IF NOT EXISTS unique_active_workout_per_user_date 
+ON workout_records(user_id, workout_date) 
+WHERE is_revoked = FALSE;
 
 -- 3. 주간 벌금 기록 테이블
 CREATE TABLE IF NOT EXISTS weekly_penalties (

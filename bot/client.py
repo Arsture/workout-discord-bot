@@ -60,15 +60,6 @@ class WorkoutBot(commands.Bot):
             logger.error(f"봇 설정 중 오류 발생: {e}")
             raise
 
-    async def sync_commands(self):
-        """슬래시 커맨드 동기화 (외부에서 호출)"""
-        try:
-            synced = await self.tree.sync()
-            logger.info(f"{len(synced)}개의 슬래시 커맨드 동기화 완료")
-        except Exception as e:
-            logger.error(f"슬래시 커맨드 동기화 실패: {e}")
-            raise
-
     async def _setup_weekly_report_schedule(self):
         """주간 리포트 스케줄 설정"""
         try:
@@ -96,6 +87,13 @@ class WorkoutBot(commands.Bot):
         """봇이 준비되었을 때"""
         logger.info(f"{self.user}(ID: {self.user.id})로 로그인 완료!")
         logger.info(f"서버 수: {len(self.guilds)}")
+
+        # 슬래시 커맨드 동기화 (로그인 후에만 가능)
+        try:
+            synced = await self.tree.sync()
+            logger.info(f"{len(synced)}개의 슬래시 커맨드 동기화 완료")
+        except Exception as e:
+            logger.error(f"슬래시 커맨드 동기화 실패: {e}")
 
         # 현재 등록된 명령어 로그
         commands = [cmd.name for cmd in self.tree.get_commands()]

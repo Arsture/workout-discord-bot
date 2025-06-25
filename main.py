@@ -65,9 +65,6 @@ async def main():
         # 슬래시 커맨드 등록
         setup_all_commands(bot)
 
-        # 슬래시 커맨드 동기화
-        await bot.sync_commands()
-
         logger.info("봇 시작 중...")
 
         # 봇 실행
