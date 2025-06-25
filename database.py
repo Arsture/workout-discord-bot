@@ -114,10 +114,10 @@ class Database:
             workout_date_str = workout_date.date().isoformat()
             week_start_str = week_start_date.date().isoformat()
 
-            # 이미 해당 날짜에 기록이 있는지 확인
+            # 이미 해당 날짜에 기록이 있는지 확인 (취소되지 않은 기록만)
             existing_record = (
                 self.supabase.table("workout_records")
-                .select("*")
+                .select("id, is_revoked")
                 .eq("user_id", user_id)
                 .eq("workout_date", workout_date_str)
                 .eq("is_revoked", False)
@@ -125,7 +125,9 @@ class Database:
             )
 
             if existing_record.data:
-                logger.info(f"이미 기록된 운동: {username} - {workout_date_str}")
+                logger.info(
+                    f"이미 기록된 운동 (취소되지 않음): {username} - {workout_date_str}"
+                )
                 return False
 
             # 새 운동 기록 추가
@@ -144,8 +146,16 @@ class Database:
                 .execute()
             )
 
-            logger.info(f"운동 기록 추가: {username} - {workout_date_str}")
-            return True
+            if response.data:
+                logger.info(
+                    f"운동 기록 추가 성공: {username} - {workout_date_str} - ID: {response.data[0].get('id')}"
+                )
+                return True
+            else:
+                logger.error(
+                    f"운동 기록 추가 실패 (응답 데이터 없음): {username} - {workout_date_str}"
+                )
+                return False
         except Exception as e:
             logger.error(f"운동 기록 추가 실패: {e}")
             return False
@@ -155,10 +165,10 @@ class Database:
         try:
             workout_date_str = workout_date.date().isoformat()
 
-            # 취소할 기록 확인
+            # 취소할 기록 확인 (취소되지 않은 기록만)
             existing_record = (
                 self.supabase.table("workout_records")
-                .select("*")
+                .select("id, is_revoked, created_at")
                 .eq("user_id", user_id)
                 .eq("workout_date", workout_date_str)
                 .eq("is_revoked", False)
@@ -166,9 +176,23 @@ class Database:
             )
 
             if not existing_record.data:
-                logger.info(
-                    f"취소할 운동 기록 없음: 사용자 {user_id} - {workout_date_str}"
+                # 추가 디버깅: 해당 날짜의 모든 기록 확인
+                all_records = (
+                    self.supabase.table("workout_records")
+                    .select("id, is_revoked, created_at")
+                    .eq("user_id", user_id)
+                    .eq("workout_date", workout_date_str)
+                    .execute()
                 )
+
+                if all_records.data:
+                    logger.info(
+                        f"취소할 운동 기록 없음 (이미 취소된 기록 존재): 사용자 {user_id} - {workout_date_str} - 기록 수: {len(all_records.data)}"
+                    )
+                else:
+                    logger.info(
+                        f"취소할 운동 기록 없음 (기록 자체가 없음): 사용자 {user_id} - {workout_date_str}"
+                    )
                 return False
 
             # 기록 취소 (is_revoked를 True로 설정)
@@ -177,8 +201,16 @@ class Database:
                 .update({"is_revoked": True})
                 .eq("user_id", user_id)
                 .eq("workout_date", workout_date_str)
+                .eq("is_revoked", False)  # 이미 취소된 기록은 다시 취소할 수 없음
                 .execute()
             )
+
+            # 실제로 업데이트된 행이 있는지 확인
+            if not response.data:
+                logger.info(
+                    f"취소할 운동 기록 없음 (이미 취소됨): 사용자 {user_id} - {workout_date_str}"
+                )
+                return False
 
             logger.info(f"운동 기록 취소: 사용자 {user_id} - {workout_date_str}")
             return True
